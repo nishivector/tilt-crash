@@ -15,7 +15,7 @@
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       pointer-events: none; z-index: 2; touch-action: none;
     }
-    #start-screen {
+    #startScreen {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       z-index: 10; display: flex; flex-direction: column;
       align-items: center; justify-content: center;
@@ -70,7 +70,7 @@
 <body>
 
 <!-- START SCREEN -->
-<div id="start-screen">
+<div id="startScreen">
   <svg id="start-title-svg" viewBox="0 0 600 120" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <filter id="glow1" x="-20%" y="-20%" width="140%" height="140%">
@@ -162,7 +162,7 @@ const LEVEL_CONFIGS = [
 ];
 
 // ─── DOM REFS ─────────────────────────────────────────────────────────────────
-const startScreen = document.getElementById('start-screen');
+const startScreen = document.getElementById('startScreen');
 const instrScreen = document.getElementById('instructions-screen');
 const threeCanvas = document.getElementById('three-canvas');
 const hudCanvas = document.getElementById('hud-canvas');
