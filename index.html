@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Tilt Crash</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #C07838; overflow: hidden; width: 100vw; height: 100vh; }
+    #three-canvas {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      touch-action: none;
+    }
+    #hud-canvas {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 2; touch-action: none;
+    }
+    #start-screen {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 10; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #C07838; touch-action: none;
+    }
+    #instructions-screen {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 10; display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #C07838; touch-action: none;
+    }
+    .screen-hidden { display: none !important; }
+    #start-title-svg { width: 90vw; max-width: 600px; margin-bottom: 20px; }
+    #start-board-container {
+      position: relative; width: min(72vw, 400px); height: min(72vw, 400px);
+      margin: 10px auto;
+    }
+    #start-board-canvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      touch-action: none;
+    }
+    #start-prompt {
+      font-family: 'Courier New', monospace; font-size: clamp(14px, 3vw, 18px);
+      color: #FF4B1F; letter-spacing: 3px; text-transform: uppercase;
+      margin-top: 24px; animation: pulse-text 1.2s ease-in-out infinite alternate;
+    }
+    @keyframes pulse-text { from { opacity: 0.5; } to { opacity: 1.0; } }
+    #instr-content {
+      max-width: 500px; padding: 40px; text-align: center;
+    }
+    #instr-title {
+      font-family: 'Courier New', monospace; font-size: clamp(22px, 5vw, 36px);
+      color: #FF4B1F; letter-spacing: 4px; margin-bottom: 30px;
+    }
+    .instr-line {
+      font-family: 'Courier New', monospace; font-size: clamp(14px, 3vw, 18px);
+      color: #1A1A1A; margin: 14px 0; letter-spacing: 1px; line-height: 1.5;
+    }
+    .instr-line strong { color: #FF4B1F; }
+    #instr-start-btn {
+      margin-top: 36px; padding: 14px 40px;
+      background: #1A1A1A; color: #FF4B1F;
+      font-family: 'Courier New', monospace; font-size: clamp(16px, 3vw, 20px);
+      letter-spacing: 3px; border: 2px solid #FF4B1F; cursor: pointer;
+      touch-action: none;
+    }
+    #instr-start-btn:hover { background: #FF4B1F; color: #1A1A1A; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js"></script>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}</script>
+</head>
+<body>
+
+<!-- START SCREEN -->
+<div id="start-screen">
+  <svg id="start-title-svg" viewBox="0 0 600 120" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="glow1" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="8" result="b1"/>
+        <feFlood flood-color="#FF4B1F" flood-opacity="0.7" result="c1"/>
+        <feComposite in="c1" in2="b1" operator="in" result="g1"/>
+        <feMerge><feMergeNode in="g1"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glow2" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="24" result="b2"/>
+        <feFlood flood-color="#C07838" flood-opacity="0.4" result="c2"/>
+        <feComposite in="c2" in2="b2" operator="in" result="g2"/>
+        <feMerge><feMergeNode in="g2"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="combined">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="b1"/>
+        <feFlood flood-color="#FF4B1F" flood-opacity="0.7" result="c1"/>
+        <feComposite in="c1" in2="b1" operator="in" result="g1"/>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="24" result="b2"/>
+        <feFlood flood-color="#C07838" flood-opacity="0.4" result="c2"/>
+        <feComposite in="c2" in2="b2" operator="in" result="g2"/>
+        <feMerge><feMergeNode in="g2"/><feMergeNode in="g1"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+    <!-- Rotating ring -->
+    <g id="ring-group" transform="translate(300,60)">
+      <circle r="220" stroke="#FF4B1F" stroke-width="1.5" fill="none" stroke-dasharray="12 6"/>
+    </g>
+    <!-- Title text with glow -->
+    <text x="300" y="75" text-anchor="middle" font-family="'Courier New',monospace"
+      font-size="72" font-weight="900" fill="#1A1A1A" filter="url(#combined)"
+      letter-spacing="4" id="title-text">TILT CRASH</text>
+  </svg>
+
+  <div id="start-board-container">
+    <canvas id="start-board-canvas"></canvas>
+  </div>
+  <div id="start-prompt">TAP TO START</div>
+</div>
+
+<!-- INSTRUCTIONS SCREEN -->
+<div id="instructions-screen">
+  <div id="instr-content">
+    <div id="instr-title">HOW TO PLAY</div>
+    <div class="instr-line"><strong>DRAG</strong> to tilt the board</div>
+    <div class="instr-line">Roll the <strong>IRON BALL</strong> into enemies</div>
+    <div class="instr-line">Don't fall off the <strong>EDGE</strong></div>
+    <div class="instr-line">Destroy all enemies to advance</div>
+    <div class="instr-line">Build <strong>COMBOS</strong> for massive scores</div>
+    <button id="instr-start-btn">PLAY →</button>
+  </div>
+</div>
+
+<!-- THREE.JS CANVAS -->
+<canvas id="three-canvas"></canvas>
+<!-- HUD OVERLAY CANVAS -->
+<canvas id="hud-canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+const BOARD_SIZE = 400;
+const BALL_RADIUS = 18;
+const BALL_MASS = 14.0;
+const GRAVITY = 9.8;
+const ROLL_FRICTION = 0.012;
+const MAX_BALL_VEL = 22;
+const ENEMY_SIZE = 20;
+const ENEMY_MASS = 1.0;
+const ENEMY_RESTITUTION = 0.7;
+const EDGE_DANGER = 24; // 12% of half-width (200*0.12=24)
+const DEG28 = 28 * Math.PI / 180;
+
+const LEVEL_CONFIGS = [
+  { enemies: 8,  time: 45, maxTilt: DEG28, sens: 0.045, spring: 140, damp: 18, friction: ROLL_FRICTION,
+    enemyDefs: 'static8' },
+  { enemies: 12, time: 50, maxTilt: DEG28, sens: 0.045, spring: 140, damp: 18, friction: ROLL_FRICTION,
+    enemyDefs: 'mixed12' },
+  { enemies: 16, time: 55, maxTilt: DEG28, sens: 0.045, spring: 140, damp: 14, friction: ROLL_FRICTION,
+    enemyDefs: 'mixed16' },
+  { enemies: 20, time: 55, maxTilt: 22*Math.PI/180, sens: 0.038, spring: 140, damp: 14, friction: ROLL_FRICTION,
+    enemyDefs: 'mixed20' },
+  { enemies: 24, time: 60, maxTilt: 22*Math.PI/180, sens: 0.038, spring: 140, damp: 10, friction: 0.008,
+    enemyDefs: 'mixed24' },
+];
+
+// ─── DOM REFS ─────────────────────────────────────────────────────────────────
+const startScreen = document.getElementById('start-screen');
+const instrScreen = document.getElementById('instructions-screen');
+const threeCanvas = document.getElementById('three-canvas');
+const hudCanvas = document.getElementById('hud-canvas');
+const hudCtx = hudCanvas.getContext('2d');
+
+// ─── GAME STATE ───────────────────────────────────────────────────────────────
+let gameState = 'start'; // start | instructions | playing | gameover | levelclear
+let currentLevel = 0;
+let score = 0;
+let comboMult = 1;
+let comboPeak = 1;
+let comboTimer = 0;
+let timeRemaining = 45;
+let levelTimer = 0;
+let enemies = [];
+let particles = [];
+let ball = { x: 0, y: 0, vx: 0, vy: 0 };
+let boardTiltX = 0, boardTiltY = 0; // current tilt angles (radians)
+let tiltVelX = 0, tiltVelY = 0;
+let targetTiltX = 0, targetTiltY = 0;
+let pointerDown = false;
+let pointerAnchorX = 0, pointerAnchorY = 0;
+let pointerTiltX = 0, pointerTiltY = 0;
+let edgeDanger = false;
+let ballSpeed = 0;
+let lastTime = 0;
+let accumulator = 0;
+const FIXED_DT = 1/60;
+let animFrameId = null;
+let killStreak = 0;
+let killStreakTimer = 0;
+
+// ─── THREE.JS SETUP ──────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0xC07838);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xC07838);
+
+// Orthographic camera with 15° tilt
+const aspect = window.innerWidth / window.innerHeight;
+const VIEW_H = 600;
+const VIEW_W = VIEW_H * aspect;
+const camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 2000);
+// Position for top-down 15° tilt
+camera.position.set(0, 520, 140);
+camera.lookAt(0, 0, 0);
+
+// Post-processing (bloom)
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.6, 0.5, 0.72
+);
+composer.addPass(bloomPass);
+
+// ─── SCENE OBJECTS ───────────────────────────────────────────────────────────
+// Board
+const boardGeo = new THREE.BoxGeometry(BOARD_SIZE, 8, BOARD_SIZE);
+const boardMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, roughness: 0.9, metalness: 0.2 });
+const boardMesh = new THREE.Mesh(boardGeo, boardMat);
+boardMesh.position.y = -4;
+scene.add(boardMesh);
+
+// Board edge frame
+const edgeColor = 0x8B5A1A;
+const edgeMat = new THREE.MeshStandardMaterial({ color: edgeColor, roughness: 0.8 });
+const edgeThick = 4;
+const edgeHeight = 12;
+// Four edges
+const edges = [
+  { x: 0, z: -(BOARD_SIZE/2 + edgeThick/2), w: BOARD_SIZE + edgeThick*2, d: edgeThick },
+  { x: 0, z:  (BOARD_SIZE/2 + edgeThick/2), w: BOARD_SIZE + edgeThick*2, d: edgeThick },
+  { x: -(BOARD_SIZE/2 + edgeThick/2), z: 0, w: edgeThick, d: BOARD_SIZE },
+  { x:  (BOARD_SIZE/2 + edgeThick/2), z: 0, w: edgeThick, d: BOARD_SIZE },
+];
+const edgeMeshes = [];
+for (const e of edges) {
+  const g = new THREE.BoxGeometry(e.w, edgeHeight, e.d);
+  const m = new THREE.Mesh(g, edgeMat);
+  m.position.set(e.x, edgeHeight/2 - 4, e.z);
+  boardMesh.add(m);
+  edgeMeshes.push(m);
+}
+
+// Board danger glow material (separate edge meshes for glow)
+const edgeDangerMat = new THREE.MeshStandardMaterial({
+  color: 0xFF4B1F, emissive: 0xFF4B1F, emissiveIntensity: 2.0, roughness: 0.5
+});
+
+// Ball
+const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 24, 16);
+const ballMat = new THREE.MeshStandardMaterial({
+  color: 0x1A1A1A, roughness: 0.85, metalness: 0.3,
+  emissive: 0x331100, emissiveIntensity: 0.3
+});
+const ballMesh = new THREE.Mesh(ballGeo, ballMat);
+scene.add(ballMesh);
+
+// Lights
+const ambLight = new THREE.AmbientLight(0xFFAA55, 0.8);
+scene.add(ambLight);
+const dirLight = new THREE.DirectionalLight(0xFF8833, 1.2);
+dirLight.position.set(100, 200, 100);
+scene.add(dirLight);
+const fillLight = new THREE.PointLight(0xFF4400, 0.6, 800);
+fillLight.position.set(0, -50, 0);
+scene.add(fillLight);
+
+// Enemy meshes pool
+const enemyMeshPool = [];
+const enemyGeo = new THREE.BoxGeometry(ENEMY_SIZE, ENEMY_SIZE, ENEMY_SIZE);
+const enemyMat = new THREE.MeshStandardMaterial({
+  color: 0xE8D5A3, roughness: 0.6, metalness: 0.3,
+  emissive: 0x442200, emissiveIntensity: 0.2
+});
+
+function getEnemyMesh() {
+  let m = enemyMeshPool.find(e => !e.inUse);
+  if (!m) {
+    m = new THREE.Mesh(enemyGeo, enemyMat.clone());
+    m.inUse = false;
+    scene.add(m);
+    enemyMeshPool.push(m);
+  }
+  m.inUse = true;
+  m.visible = true;
+  return m;
+}
+function releaseEnemyMesh(m) {
+  m.inUse = false;
+  m.visible = false;
+}
+
+// Particle system (debris)
+const MAX_PARTICLES = 200;
+const partPositions = new Float32Array(MAX_PARTICLES * 3);
+const partGeo = new THREE.BufferGeometry();
+partGeo.setAttribute('position', new THREE.BufferAttribute(partPositions, 3));
+const partMat = new THREE.PointsMaterial({ color: 0xFFB347, size: 6, sizeAttenuation: true });
+const partSystem = new THREE.Points(partGeo, partMat);
+scene.add(partSystem);
+
+// ─── RESIZE ──────────────────────────────────────────────────────────────────
+function onResize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  hudCanvas.width = w;
+  hudCanvas.height = h;
+  // Resize start board canvas
+  const sbc = document.getElementById('start-board-canvas');
+  if (sbc) {
+    sbc.width = sbc.offsetWidth;
+    sbc.height = sbc.offsetHeight;
+  }
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+// ─── AUDIO ───────────────────────────────────────────────────────────────────
+let audioReady = false;
+let rollNoise, rollFilter, rollGain;
+let bgSynths = {};
+let beatSeq, snareSeq, hihatSeq;
+let bgGain;
+let lowpassFilter;
+let distortedLayer, distortedGain;
+let nearEdgeSynth, nearEdgeInterval;
+let boardTiltSynth;
+let killStreakLayer = false;
+let killStreak16Layer = false;
+
+async function initAudio() {
+  try {
+    // Master output filter (for edge danger)
+    lowpassFilter = new Tone.Filter(8000, 'lowpass').toDestination();
+    bgGain = new Tone.Gain(0).connect(lowpassFilter);
+
+    // ── Background music ──
+    const kickSynth = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 5,
+      envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.1 }
+    }).connect(bgGain);
+
+    const snareSynth = new Tone.NoiseSynth({ noise: { type: 'white' },
+      envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.01 }
+    }).connect(new Tone.Filter(3000, 'bandpass').connect(bgGain));
+
+    const hihatSynth = new Tone.MetalSynth({
+      frequency: 400, envelope: { attack: 0.001, decay: 0.04, release: 0.01 },
+      harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5
+    }).connect(bgGain);
+
+    const leadSynth = new Tone.Synth({
+      oscillator: { type: 'sawtooth' },
+      envelope: { attack: 0.01, decay: 0.1, sustain: 0.3, release: 0.3 }
+    }).connect(new Tone.Filter(2000, 'lowpass').connect(bgGain));
+
+    // BPM 118
+    Tone.getTransport().bpm.value = 118;
+
+    const pentatonic = ['A3','C4','D4','E4','G4','A4'];
+    let leadNote = 0;
+
+    beatSeq = new Tone.Sequence((time, step) => {
+      kickSynth.triggerAttackRelease('C1', '8n', time);
+      if (step === 1 || step === 3) {
+        snareSynth.triggerAttackRelease('8n', time);
+      }
+    }, [0,1,2,3], '4n');
+
+    hihatSeq = new Tone.Sequence((time, step) => {
+      hihatSynth.triggerAttackRelease('16n', time, 0.3);
+    }, [0,1], '8n');
+
+    const leadSeq = new Tone.Sequence((time, step) => {
+      if (step % 3 === 0) {
+        leadNote = (leadNote + 1) % pentatonic.length;
+        leadSynth.triggerAttackRelease(pentatonic[leadNote], '16n', time, 0.25);
+      }
+    }, [0,1,2,3,4,5,6,7], '8n');
+
+    beatSeq.start(0);
+    hihatSeq.start(0);
+    leadSeq.start(0);
+
+    // ── Distorted layer for kill streaks ──
+    distortedGain = new Tone.Gain(0).connect(lowpassFilter);
+    distortedLayer = new Tone.Synth({
+      oscillator: { type: 'sawtooth' },
+      envelope: { attack: 0.01, decay: 0.3, sustain: 0.5, release: 0.2 }
+    }).connect(new Tone.Distortion(0.8).connect(distortedGain));
+
+    // ── SFX ──
+    // Ball roll noise
+    rollFilter = new Tone.Filter(280, 'lowpass').connect(lowpassFilter);
+    rollGain = new Tone.Gain(0).connect(rollFilter);
+    rollNoise = new Tone.Noise('brown').connect(rollGain);
+    rollNoise.start();
+
+    // Board tilt synth
+    boardTiltSynth = new Tone.Synth({
+      oscillator: { type: 'sawtooth' },
+      envelope: { attack: 0.01, decay: 0.15, sustain: 0, release: 0.05 }
+    }).connect(new Tone.Gain(0.08).connect(lowpassFilter));
+
+    // Near-edge synth
+    nearEdgeSynth = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.1 }
+    }).connect(lowpassFilter);
+
+    bgSynths = { kickSynth, snareSynth, hihatSynth, leadSynth };
+    audioReady = true;
+  } catch(e) { /* audio unavailable */ }
+}
+
+function startBgMusic() {
+  if (!audioReady) return;
+  try {
+    Tone.getTransport().start();
+    if (bgGain) bgGain.gain.rampTo(0.6, 1.2);
+  } catch(e) {}
+}
+
+function stopBgMusic() {
+  if (!audioReady) return;
+  try {
+    if (bgGain) bgGain.gain.rampTo(0, 0.1);
+  } catch(e) {}
+}
+
+function playEnemyCrush() {
+  if (!audioReady) return;
+  try {
+    const crush = new Tone.MembraneSynth({
+      pitchDecay: 0.02, octaves: 4,
+      envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.1 }
+    }).connect(lowpassFilter);
+    crush.triggerAttackRelease(180, '8n', Tone.now(), 0.7);
+    const metal = new Tone.MetalSynth({
+      frequency: 400, envelope: { attack: 0.001, decay: 0.08, release: 0.01 },
+      harmonicity: 3, modulationIndex: 16, resonance: 2000, octaves: 1
+    }).connect(lowpassFilter);
+    metal.triggerAttackRelease('16n', Tone.now(), 0.5);
+    setTimeout(() => { crush.dispose(); metal.dispose(); }, 500);
+  } catch(e) {}
+}
+
+function playBoardTilt(down) {
+  if (!audioReady || !boardTiltSynth) return;
+  try {
+    if (down) {
+      boardTiltSynth.triggerAttack(90, Tone.now());
+      boardTiltSynth.frequency.rampTo(140, 0.15);
+    } else {
+      boardTiltSynth.triggerAttack(140, Tone.now());
+      boardTiltSynth.frequency.rampTo(90, 0.15);
+      boardTiltSynth.triggerRelease(Tone.now() + 0.15);
+    }
+  } catch(e) {}
+}
+
+function playLevelComplete() {
+  if (!audioReady) return;
+  try {
+    stopBgMusic();
+    const m = new Tone.MetalSynth({
+      frequency: 60, envelope: { attack: 0.001, decay: 1.8, release: 0.5 },
+      harmonicity: 5.1, modulationIndex: 32, resonance: 1000, octaves: 2
+    }).connect(lowpassFilter);
+    m.triggerAttackRelease('16n', Tone.now(), 0.8);
+    setTimeout(() => m.dispose(), 3000);
+  } catch(e) {}
+}
+
+function playBallFall() {
+  if (!audioReady) return;
+  try {
+    stopBgMusic();
+    const s = new Tone.Synth({
+      oscillator: { type: 'triangle' },
+      envelope: { attack: 0.01, decay: 0.9, sustain: 0, release: 0.1 }
+    }).connect(lowpassFilter);
+    s.triggerAttack(220, Tone.now(), 0.4);
+    s.frequency.rampTo(40, 0.9);
+    s.triggerRelease(Tone.now() + 0.9);
+    setTimeout(() => s.dispose(), 2000);
+  } catch(e) {}
+}
+
+function updateRollSound(speed) {
+  if (!audioReady || !rollGain) return;
+  try {
+    const g = Math.min(0.35, (speed / MAX_BALL_VEL) * 0.35);
+    rollGain.gain.rampTo(g, 0.05);
+  } catch(e) {}
+}
+
+function updateEdgeSound(nearEdge, proximity) {
+  if (!audioReady || !nearEdgeSynth) return;
+  try {
+    if (nearEdge && !nearEdgeInterval) {
+      nearEdgeInterval = setInterval(() => {
+        if (!audioReady) return;
+        try {
+          const vol = proximity * 0.25;
+          nearEdgeSynth.triggerAttackRelease(55, '16n', Tone.now(), vol);
+        } catch(e) {}
+      }, 300);
+      if (lowpassFilter) lowpassFilter.frequency.rampTo(2400, 0.4);
+    } else if (!nearEdge && nearEdgeInterval) {
+      clearInterval(nearEdgeInterval);
+      nearEdgeInterval = null;
+      if (lowpassFilter) lowpassFilter.frequency.rampTo(8000, 0.4);
+    }
+  } catch(e) {}
+}
+
+function updateKillStreakMusic(streak) {
+  if (!audioReady || !distortedGain) return;
+  try {
+    if (streak >= 7 && !killStreak16Layer) {
+      killStreak16Layer = true;
+      // Double snare to 16th (simulated by extra hihat)
+      if (hihatSeq) hihatSeq.subdivision = '16n';
+    }
+    if (streak >= 3 && !killStreakLayer) {
+      killStreakLayer = true;
+      distortedGain.gain.rampTo(0.3, 0.2);
+      // Repeat distorted notes
+      const dist = distortedLayer;
+      const notes = ['A3','C4','E4'];
+      let ni = 0;
+      const interval = setInterval(() => {
+        if (!killStreakLayer) { clearInterval(interval); return; }
+        try { dist.triggerAttackRelease(notes[ni % notes.length], '8n', Tone.now(), 0.4); } catch(e) {}
+        ni++;
+      }, 500);
+      setTimeout(() => {
+        killStreakLayer = false;
+        if (distortedGain) distortedGain.gain.rampTo(0, 0.3);
+        clearInterval(interval);
+      }, 4 * (60/118) * 4 * 1000);
+    }
+  } catch(e) {}
+}
+
+// ─── START SCREEN ANIMATION ──────────────────────────────────────────────────
+const startCanvas = document.getElementById('start-board-canvas');
+const startCtx = startCanvas.getContext('2d');
+let startAnimTime = 0;
+let startAnimFrame = null;
+let ghostHitTimer = 0;
+let ghostHitState = 'rolling'; // rolling | shattering | waiting
+let ghostHitTarget = 0;
+let ghostShatterParticles = [];
+let startBoardTilt = 0;
+let startBoardTiltDir = 1;
+
+const START_ENEMIES = [
+  { t: 0.15 }, { t: 0.5 }, { t: 0.82 }
+];
+
+function lissajous(t) {
+  const a = 1, b = 2, delta = Math.PI / 2;
+  return {
+    x: Math.sin(a * t + delta),
+    y: Math.sin(b * t)
+  };
+}
+
+function drawStartBoard(dt) {
+  startAnimTime += dt;
+  ghostHitTimer += dt;
+  startBoardTilt += 0.4 * dt * startBoardTiltDir;
+  if (Math.abs(startBoardTilt) > 0.12) startBoardTiltDir *= -1;
+
+  const w = startCanvas.width;
+  const h = startCanvas.height;
+  if (w === 0 || h === 0) return;
+
+  startCtx.clearRect(0, 0, w, h);
+
+  // Board background with tilt effect
+  startCtx.save();
+  startCtx.translate(w/2, h/2);
+  startCtx.scale(1, 1 - Math.abs(startBoardTilt)*0.12);
+  startCtx.translate(-w/2, -h/2);
+
+  // Board fill
+  startCtx.fillStyle = '#1A1A1A';
+  startCtx.fillRect(4, 4, w-8, h-8);
+
+  // Board border
+  startCtx.strokeStyle = '#8B5A1A';
+  startCtx.lineWidth = 4;
+  startCtx.strokeRect(2, 2, w-4, h-4);
+
+  const boardW = w - 16;
+  const boardH = h - 16;
+  const ox = 8, oy = 8;
+
+  // Draw enemy cubes at Lissajous crossing points
+  for (let i = 0; i < START_ENEMIES.length; i++) {
+    const e = START_ENEMIES[i];
+    const lp = lissajous(e.t * Math.PI * 2);
+    const ex = ox + (lp.x * 0.35 + 0.5) * boardW;
+    const ey = oy + (lp.y * 0.35 + 0.5) * boardH;
+    const es = 20 * (w / 300);
+
+    if (ghostHitState === 'shattering' && i === ghostHitTarget) continue;
+
+    startCtx.fillStyle = '#E8D5A3';
+    startCtx.fillRect(ex - es/2, ey - es/2, es, es);
+    startCtx.strokeStyle = '#8B5A1A';
+    startCtx.lineWidth = 1.5;
+    startCtx.strokeRect(ex - es/2, ey - es/2, es, es);
+  }
+
+  // Ghost ball on Lissajous curve
+  const speed = ghostHitState === 'shattering' ? 0.4 : 1.0;
+  const t = startAnimTime * 0.35 * speed;
+  const lp = lissajous(t);
+  const bx = ox + (lp.x * 0.35 + 0.5) * boardW;
+  const by = oy + (lp.y * 0.35 + 0.5) * boardH;
+  const br = 18 * (w / 300);
+
+  startCtx.globalAlpha = 0.4;
+  startCtx.fillStyle = '#1A1A1A';
+  startCtx.beginPath();
+  startCtx.arc(bx, by, br, 0, Math.PI * 2);
+  startCtx.fill();
+  startCtx.globalAlpha = 1.0;
+
+  // Hit detection for ghost ball
+  if (ghostHitState === 'rolling' && ghostHitTimer > 6) {
+    ghostHitTimer = 0;
+    ghostHitTarget = Math.floor(Math.random() * START_ENEMIES.length);
+    ghostHitState = 'shattering';
+    // Spawn shatter particles
+    const e = START_ENEMIES[ghostHitTarget];
+    const lp2 = lissajous(e.t * Math.PI * 2);
+    const ex = ox + (lp2.x * 0.35 + 0.5) * boardW;
+    const ey = oy + (lp2.y * 0.35 + 0.5) * boardH;
+    ghostShatterParticles = [];
+    for (let k = 0; k < 12; k++) {
+      const ang = (k / 12) * Math.PI * 2;
+      ghostShatterParticles.push({
+        x: ex, y: ey,
+        vx: Math.cos(ang) * (1 + Math.random() * 2),
+        vy: Math.sin(ang) * (1 + Math.random() * 2),
+        life: 1.0, r: 3 + Math.random() * 4
+      });
+    }
+  }
+  if (ghostHitState === 'shattering' && ghostHitTimer > 2) {
+    ghostHitTimer = 0;
+    ghostHitState = 'rolling';
+    ghostShatterParticles = [];
+    START_ENEMIES[ghostHitTarget].t = Math.random();
+  }
+
+  // Draw shatter particles
+  for (const p of ghostShatterParticles) {
+    p.x += p.vx * 0.4;
+    p.y += p.vy * 0.4;
+    p.life -= dt * 0.5;
+    if (p.life <= 0) continue;
+    startCtx.globalAlpha = p.life * 0.8;
+    startCtx.fillStyle = '#FFB347';
+    startCtx.beginPath();
+    startCtx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+    startCtx.fill();
+    startCtx.globalAlpha = 1.0;
+  }
+
+  startCtx.restore();
+}
+
+function startScreenAnimation() {
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    // Animate SVG ring
+    const ring = document.getElementById('ring-group');
+    if (ring) {
+      const angle = (now * 0.001 * 0.6 * 360 / 60) % 360;
+      ring.setAttribute('transform', `translate(300,60) rotate(${angle})`);
+    }
+    // Pulse title glow
+    const titleText = document.getElementById('title-text');
+    if (titleText) {
+      const pulse = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(now * 0.001 * Math.PI * 2 / 2.4));
+      titleText.style.opacity = pulse;
+    }
+    // Resize canvas
+    const sbc = document.getElementById('start-board-canvas');
+    if (sbc && (sbc.width !== sbc.offsetWidth || sbc.height !== sbc.offsetHeight)) {
+      sbc.width = sbc.offsetWidth || 300;
+      sbc.height = sbc.offsetHeight || 300;
+    }
+    drawStartBoard(dt);
+    startAnimFrame = requestAnimationFrame(frame);
+  }
+  startAnimFrame = requestAnimationFrame(frame);
+}
+
+function stopStartScreenAnimation() {
+  if (startAnimFrame) { cancelAnimationFrame(startAnimFrame); startAnimFrame = null; }
+}
+
+// ─── ENEMY CREATION ──────────────────────────────────────────────────────────
+function createEnemyDefs(type) {
+  const defs = [];
+  const half = BOARD_SIZE / 2 - ENEMY_SIZE;
+
+  if (type === 'static8') {
+    // 2×4 grid centered
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 4; col++) {
+        defs.push({
+          x: (col - 1.5) * 60,
+          z: (row - 0.5) * 60,
+          vx: 0, vz: 0, type: 'static'
+        });
+      }
+    }
+  } else if (type === 'mixed12') {
+    // 10 static + 2 drifting horizontal
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 4; col++) {
+        defs.push({ x: (col-1.5)*55, z: (row-1)*55, vx:0, vz:0, type:'static' });
+      }
+    }
+    defs.push({ x: -80, z: 80, vx: 0.5, vz: 0, type: 'drifter', reverseAt: BOARD_SIZE*0.4 });
+    defs.push({ x: 80, z: 80, vx: -0.5, vz: 0, type: 'drifter', reverseAt: BOARD_SIZE*0.4 });
+  } else if (type === 'mixed16') {
+    // 12 static in corner clusters + 4 drifting diagonal
+    const corners = [[-1,-1],[1,-1],[-1,1],[1,1]];
+    for (const [cx,cz] of corners) {
+      for (let i = 0; i < 3; i++) {
+        defs.push({
+          x: cx*120 + (i%2-0.5)*40,
+          z: cz*120 + (Math.floor(i/2)-0.25)*40,
+          vx:0, vz:0, type:'static'
+        });
+      }
+    }
+    const diags = [[0.85,0.85],[-0.85,0.85],[0.85,-0.85],[-0.85,-0.85]];
+    for (const [dvx,dvz] of diags) {
+      defs.push({ x: dvx*60, z: dvz*60, vx: dvx*1.2, vz: dvz*1.2, type:'drifter', reverseAt: BOARD_SIZE*0.4 });
+    }
+  } else if (type === 'mixed20') {
+    // 14 static + 4 drifting + 2 bouncers
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 4; col++) {
+        defs.push({ x:(col-1.5)*60, z:(row-1.5)*60, vx:0, vz:0, type:'static' });
+      }
+    }
+    for (let i = 0; i < 3; i++) {
+      defs.push({ x:-100+i*100, z:90, vx:0, vz:0, type:'static' });
+    }
+    for (let i = 0; i < 3; i++) {
+      defs.push({ x:-100+i*100, z:-90, vx:0, vz:0, type:'static' });
+    }
+    const driftAngles = [0, Math.PI/2, Math.PI, 3*Math.PI/2];
+    for (const ang of driftAngles) {
+      defs.push({ x: Math.cos(ang)*80, z: Math.sin(ang)*80, vx: Math.cos(ang)*1.8, vz: Math.sin(ang)*1.8, type:'drifter', reverseAt: BOARD_SIZE*0.4 });
+    }
+    defs.push({ x:-120, z:0, vx:2.8, vz:1.2, type:'bouncer' });
+    defs.push({ x: 120, z:0, vx:-2.8, vz:-1.2, type:'bouncer' });
+  } else if (type === 'mixed24') {
+    // 14 static + 8 drifting + 4 bouncers + 2 chasers
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 4; col++) {
+        defs.push({ x:(col-1.5)*55, z:(row-0.5)*40, vx:0, vz:0, type:'static' });
+      }
+    }
+    for (let i = 0; i < 3; i++) {
+      defs.push({ x:-80+i*80, z:120, vx:0, vz:0, type:'static' });
+      defs.push({ x:-80+i*80, z:-120, vx:0, vz:0, type:'static' });
+    }
+    for (let i = 0; i < 8; i++) {
+      const ang = (i/8) * Math.PI * 2;
+      defs.push({ x: Math.cos(ang)*100, z: Math.sin(ang)*100, vx: Math.cos(ang+Math.PI/2)*2.4, vz: Math.sin(ang+Math.PI/2)*2.4, type:'drifter', reverseAt: BOARD_SIZE*0.4 });
+    }
+    for (let i = 0; i < 4; i++) {
+      const ang = (i/4)*Math.PI*2 + Math.PI/4;
+      defs.push({ x: Math.cos(ang)*60, z: Math.sin(ang)*60, vx: Math.cos(ang)*2.0, vz: Math.sin(ang)*2.0, type:'bouncer' });
+    }
+    defs.push({ x:-150, z:-150, vx:0, vz:0, type:'chaser' });
+    defs.push({ x: 150, z: 150, vx:0, vz:0, type:'chaser' });
+  }
+  return defs;
+}
+
+function spawnEnemies(levelIdx) {
+  enemies.forEach(e => { if (e.mesh) releaseEnemyMesh(e.mesh); });
+  enemies = [];
+  const cfg = LEVEL_CONFIGS[levelIdx];
+  const defs = createEnemyDefs(cfg.enemyDefs);
+  for (const d of defs) {
+    const mesh = getEnemyMesh();
+    mesh.position.set(d.x, ENEMY_SIZE/2, d.z);
+    enemies.push({
+      x: d.x, z: d.z,
+      vx: d.vx || 0, vz: d.vz || 0,
+      type: d.type,
+      reverseAt: d.reverseAt || (BOARD_SIZE*0.4),
+      alive: true,
+      mesh
+    });
+  }
+}
+
+// ─── PHYSICS ─────────────────────────────────────────────────────────────────
+function physicsStep(cfg) {
+  const maxTilt = cfg.maxTilt;
+  const friction = cfg.friction;
+  const dt = FIXED_DT;
+
+  // Gravity component from tilt
+  const ax = Math.sin(boardTiltX) * GRAVITY;
+  const az = Math.sin(boardTiltY) * GRAVITY;
+
+  // Apply acceleration
+  ball.vx += ax * dt;
+  ball.vy += az * dt;
+
+  // Rolling friction
+  const spd = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
+  if (spd > 0.01) {
+    const fric = friction * GRAVITY * dt;
+    const newSpd = Math.max(0, spd - fric);
+    ball.vx = (ball.vx / spd) * newSpd;
+    ball.vy = (ball.vy / spd) * newSpd;
+  }
+
+  // Clamp velocity
+  const sp2 = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
+  if (sp2 > MAX_BALL_VEL) {
+    ball.vx = (ball.vx/sp2) * MAX_BALL_VEL;
+    ball.vy = (ball.vy/sp2) * MAX_BALL_VEL;
+  }
+
+  // Move ball
+  ball.x += ball.vx * dt * 60; // scale for unit consistency
+  ball.y += ball.vy * dt * 60;
+
+  ballSpeed = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
+
+  // Update enemies
+  const boardHalf = BOARD_SIZE / 2 - ENEMY_SIZE / 2;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+
+    // Chaser behavior
+    if (e.type === 'chaser') {
+      const dx = ball.x - e.x;
+      const dz = ball.y - e.z;
+      const dist = Math.sqrt(dx*dx + dz*dz);
+      if (dist > 1) {
+        e.vx += (dx/dist) * 1.0 * dt;
+        e.vz += (dz/dist) * 1.0 * dt;
+        const es = Math.sqrt(e.vx*e.vx+e.vz*e.vz);
+        if (es > 1.0) { e.vx=(e.vx/es)*1.0; e.vz=(e.vz/es)*1.0; }
+      }
+    }
+
+    e.x += e.vx * dt * 60;
+    e.z += e.vz * dt * 60;
+
+    // Bounce at board edges
+    if (e.type !== 'static') {
+      if (e.x < -boardHalf) { e.x = -boardHalf; e.vx *= -ENEMY_RESTITUTION; }
+      if (e.x >  boardHalf) { e.x =  boardHalf; e.vx *= -ENEMY_RESTITUTION; }
+      if (e.z < -boardHalf) { e.z = -boardHalf; e.vz *= -ENEMY_RESTITUTION; }
+      if (e.z >  boardHalf) { e.z =  boardHalf; e.vz *= -ENEMY_RESTITUTION; }
+
+      // Drifter reversal
+      if (e.type === 'drifter') {
+        if (Math.abs(e.x) > e.reverseAt) { e.vx *= -1; e.x = Math.sign(e.x)*e.reverseAt; }
+        if (Math.abs(e.z) > e.reverseAt) { e.vz *= -1; e.z = Math.sign(e.z)*e.reverseAt; }
+      }
+    }
+
+    // Ball-enemy collision (circle-square AABB)
+    const closestX = Math.max(e.x - ENEMY_SIZE/2, Math.min(ball.x, e.x + ENEMY_SIZE/2));
+    const closestZ = Math.max(e.z - ENEMY_SIZE/2, Math.min(ball.y, e.z + ENEMY_SIZE/2));
+    const dx = ball.x - closestX;
+    const dz = ball.y - closestZ;
+    const dist2 = dx*dx + dz*dz;
+
+    if (dist2 < BALL_RADIUS * BALL_RADIUS) {
+      killEnemy(e);
+    }
+
+    // Update mesh position
+    if (e.mesh) e.mesh.position.set(e.x, ENEMY_SIZE/2, e.z);
+  }
+
+  // Update particle system
+  updateParticles(dt);
+
+  // Board spring physics
+  const springStiff = cfg.spring;
+  const springDamp = cfg.damp;
+
+  if (!pointerDown) {
+    // Spring back to zero
+    const accelX = -springStiff * boardTiltX - springDamp * tiltVelX;
+    const accelY = -springStiff * boardTiltY - springDamp * tiltVelY;
+    tiltVelX += accelX * dt;
+    tiltVelY += accelY * dt;
+    boardTiltX += tiltVelX * dt;
+    boardTiltY += tiltVelY * dt;
+  } else {
+    boardTiltX += (targetTiltX - boardTiltX) * 0.15;
+    boardTiltY += (targetTiltY - boardTiltY) * 0.15;
+  }
+
+  // Clamp tilt
+  boardTiltX = Math.max(-maxTilt, Math.min(maxTilt, boardTiltX));
+  boardTiltY = Math.max(-maxTilt, Math.min(maxTilt, boardTiltY));
+
+  // Apply board rotation to Three.js mesh
+  boardMesh.rotation.z = boardTiltX;
+  boardMesh.rotation.x = boardTiltY;
+
+  // Ball position on board mesh
+  const boardY = 8 + BALL_RADIUS;
+  ballMesh.position.set(ball.x, boardY, ball.y);
+
+  // Bloom on ball by speed
+  const bloomIntensity = 0.3 + (ballSpeed / MAX_BALL_VEL) * 0.3;
+  ballMat.emissiveIntensity = ballSpeed > 8 ? bloomIntensity : 0.3;
+
+  // Edge danger
+  const halfBoard = BOARD_SIZE / 2;
+  const nearX = halfBoard - Math.abs(ball.x) < EDGE_DANGER;
+  const nearZ = halfBoard - Math.abs(ball.y) < EDGE_DANGER;
+  edgeDanger = nearX || nearZ;
+  const proximity = edgeDanger ?
+    Math.max(
+      nearX ? (EDGE_DANGER - (halfBoard - Math.abs(ball.x))) / EDGE_DANGER : 0,
+      nearZ ? (EDGE_DANGER - (halfBoard - Math.abs(ball.y))) / EDGE_DANGER : 0
+    ) : 0;
+  updateEdgeSound(edgeDanger, proximity);
+
+  // Edge glow
+  for (const em of edgeMeshes) {
+    em.material = edgeDanger ? edgeDangerMat : edgeMat;
+  }
+
+  // Ball fall check
+  if (Math.abs(ball.x) > halfBoard + BALL_RADIUS || Math.abs(ball.y) > halfBoard + BALL_RADIUS) {
+    triggerGameOver();
+  }
+}
+
+function killEnemy(e) {
+  if (!e.alive) return;
+  e.alive = false;
+  if (e.mesh) releaseEnemyMesh(e.mesh);
+
+  // Combo
+  comboMult = Math.min(8, comboMult);
+  const speedBonus = ballSpeed > 16 ? 50 : 0;
+  const pts = 100 * comboMult + speedBonus;
+  score += pts;
+  comboMult = Math.min(8, comboMult + 1);
+  comboPeak = Math.max(comboPeak, comboMult);
+  comboTimer = 1.5;
+
+  // Kill streak
+  killStreak++;
+  killStreakTimer = 3.0;
+  updateKillStreakMusic(killStreak);
+
+  // Particles
+  spawnDebris(e.x, e.z);
+  playEnemyCrush();
+
+  // Check win
+  if (enemies.every(en => !en.alive)) {
+    setTimeout(triggerLevelComplete, 300);
+  }
+}
+
+// ─── PARTICLES ───────────────────────────────────────────────────────────────
+function spawnDebris(x, z) {
+  const count = 12;
+  for (let i = 0; i < count; i++) {
+    if (particles.length >= MAX_PARTICLES) {
+      const dead = particles.findIndex(p => !p.alive);
+      if (dead >= 0) particles.splice(dead, 1); else break;
+    }
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 2 + Math.random() * 5;
+    particles.push({
+      x, y: ENEMY_SIZE/2, z,
+      vx: Math.cos(ang)*spd, vy: 3 + Math.random()*4, vz: Math.sin(ang)*spd,
+      life: 1.0, alive: true
+    });
+  }
+}
+
+function updateParticles(dt) {
+  let count = 0;
+  for (const p of particles) {
+    if (!p.alive) continue;
+    p.x += p.vx * dt * 30;
+    p.y += p.vy * dt * 30;
+    p.z += p.vz * dt * 30;
+    p.vy -= 9.8 * dt * 5;
+    p.life -= dt * 1.5;
+    if (p.life <= 0) { p.alive = false; continue; }
+    partPositions[count*3] = p.x;
+    partPositions[count*3+1] = p.y;
+    partPositions[count*3+2] = p.z;
+    count++;
+  }
+  partGeo.setAttribute('position', new THREE.BufferAttribute(partPositions.slice(0, count*3), 3));
+  partGeo.setDrawRange(0, count);
+  partGeo.attributes.position.needsUpdate = true;
+}
+
+// ─── HUD DRAWING ─────────────────────────────────────────────────────────────
+function drawHUD() {
+  const w = hudCanvas.width;
+  const h = hudCanvas.height;
+  hudCtx.clearRect(0, 0, w, h);
+
+  if (gameState !== 'playing' && gameState !== 'levelclear' && gameState !== 'gameover') return;
+
+  const cfg = LEVEL_CONFIGS[currentLevel] || LEVEL_CONFIGS[0];
+
+  // Score (top center)
+  hudCtx.font = `bold ${Math.floor(h*0.045)}px 'Courier New', monospace`;
+  hudCtx.fillStyle = '#FF4B1F';
+  hudCtx.textAlign = 'center';
+  const scoreStr = String(score).padStart(6, '0');
+  hudCtx.fillText(scoreStr, w/2, h*0.06);
+
+  // Combo multiplier (center-top, below score)
+  if (comboMult > 1) {
+    hudCtx.font = `bold ${Math.floor(h*0.035)}px 'Courier New', monospace`;
+    hudCtx.fillStyle = '#FF4B1F';
+    hudCtx.textAlign = 'center';
+    hudCtx.fillText(`×${comboMult} COMBO`, w/2, h*0.105);
+    // Combo timer bar
+    const barW = w * 0.15;
+    const barH = 3;
+    const barX = w/2 - barW/2;
+    const barY = h*0.115;
+    hudCtx.fillStyle = '#333';
+    hudCtx.fillRect(barX, barY, barW, barH);
+    hudCtx.fillStyle = '#FF4B1F';
+    hudCtx.fillRect(barX, barY, barW * (comboTimer / 1.5), barH);
+  }
+
+  // Level (top left)
+  hudCtx.font = `${Math.floor(h*0.035)}px 'Courier New', monospace`;
+  hudCtx.fillStyle = '#FF4B1F';
+  hudCtx.textAlign = 'left';
+  hudCtx.fillText(`LVL ${currentLevel+1}`, w*0.03, h*0.06);
+
+  // Time remaining (top right)
+  hudCtx.textAlign = 'right';
+  const timeStr = Math.ceil(timeRemaining).toString().padStart(2, '0');
+  hudCtx.fillText(`${timeStr}s`, w*0.97, h*0.06);
+
+  // Edge danger indicator
+  if (edgeDanger) {
+    hudCtx.strokeStyle = 'rgba(255,75,31,0.6)';
+    hudCtx.lineWidth = 6;
+    hudCtx.strokeRect(3, 3, w-6, h-6);
+  }
+
+  // Game over overlay
+  if (gameState === 'gameover') {
+    hudCtx.fillStyle = 'rgba(0,0,0,0.6)';
+    hudCtx.fillRect(0, 0, w, h);
+    hudCtx.font = `bold ${Math.floor(h*0.08)}px 'Courier New', monospace`;
+    hudCtx.fillStyle = '#FF4B1F';
+    hudCtx.textAlign = 'center';
+    hudCtx.fillText('GAME OVER', w/2, h*0.45);
+    hudCtx.font = `${Math.floor(h*0.04)}px 'Courier New', monospace`;
+    hudCtx.fillText(`SCORE: ${scoreStr}`, w/2, h*0.55);
+    hudCtx.font = `${Math.floor(h*0.03)}px 'Courier New', monospace`;
+    hudCtx.fillStyle = '#E8D5A3';
+    hudCtx.fillText('TAP TO RESTART', w/2, h*0.65);
+  }
+
+  // Level clear overlay
+  if (gameState === 'levelclear') {
+    hudCtx.fillStyle = 'rgba(0,0,0,0.5)';
+    hudCtx.fillRect(0, 0, w, h);
+    hudCtx.font = `bold ${Math.floor(h*0.07)}px 'Courier New', monospace`;
+    hudCtx.fillStyle = '#FF4B1F';
+    hudCtx.textAlign = 'center';
+    const msg = currentLevel >= LEVEL_CONFIGS.length - 1 ? 'YOU WIN!' : 'LEVEL CLEAR!';
+    hudCtx.fillText(msg, w/2, h*0.43);
+    hudCtx.font = `${Math.floor(h*0.035)}px 'Courier New', monospace`;
+    hudCtx.fillText(`SCORE: ${scoreStr}`, w/2, h*0.53);
+  }
+}
+
+// ─── GAME FLOW ────────────────────────────────────────────────────────────────
+function startLevel(levelIdx) {
+  currentLevel = levelIdx;
+  const cfg = LEVEL_CONFIGS[levelIdx];
+  timeRemaining = cfg.time;
+  comboMult = 1;
+  comboPeak = 1;
+  comboTimer = 0;
+  killStreak = 0;
+  killStreakTimer = 0;
+  killStreakLayer = false;
+  killStreak16Layer = false;
+  ball = { x: 0, y: 0, vx: 0, vy: 0 };
+  boardTiltX = 0; boardTiltY = 0;
+  tiltVelX = 0; tiltVelY = 0;
+  targetTiltX = 0; targetTiltY = 0;
+  particles = [];
+  spawnEnemies(levelIdx);
+  gameState = 'playing';
+}
+
+function triggerGameOver() {
+  if (gameState === 'gameover') return;
+  gameState = 'gameover';
+  playBallFall();
+  if (rollGain) rollGain.gain.rampTo(0, 0.1);
+  if (nearEdgeInterval) { clearInterval(nearEdgeInterval); nearEdgeInterval = null; }
+}
+
+function triggerLevelComplete() {
+  if (gameState !== 'playing') return;
+  gameState = 'levelclear';
+  // Bonus score
+  const bonus = Math.floor(timeRemaining * 20) + (comboPeak * 150);
+  score += bonus;
+  playLevelComplete();
+  if (rollGain) rollGain.gain.rampTo(0, 0.1);
+  if (nearEdgeInterval) { clearInterval(nearEdgeInterval); nearEdgeInterval = null; }
+
+  if (currentLevel >= LEVEL_CONFIGS.length - 1) {
+    // Game won
+    setTimeout(() => { gameState = 'gameover'; }, 3000);
+  } else {
+    // Advance level
+    setTimeout(() => {
+      startBgMusic();
+      startLevel(currentLevel + 1);
+    }, 2500);
+  }
+}
+
+// ─── INPUT HANDLING ───────────────────────────────────────────────────────────
+function onPointerDown(e) {
+  e.preventDefault();
+  const rect = threeCanvas.getBoundingClientRect();
+  pointerAnchorX = e.clientX - rect.left;
+  pointerAnchorY = e.clientY - rect.top;
+  pointerDown = true;
+  pointerTiltX = boardTiltX;
+  pointerTiltY = boardTiltY;
+  playBoardTilt(true);
+}
+
+function onPointerMove(e) {
+  if (!pointerDown) return;
+  e.preventDefault();
+  const rect = threeCanvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  const dx = cx - pointerAnchorX;
+  const dy = cy - pointerAnchorY;
+  const cfg = LEVEL_CONFIGS[currentLevel] || LEVEL_CONFIGS[0];
+  targetTiltX = pointerTiltX + dx * cfg.sens;
+  targetTiltY = pointerTiltY + dy * cfg.sens;
+  // Clamp
+  targetTiltX = Math.max(-cfg.maxTilt, Math.min(cfg.maxTilt, targetTiltX));
+  targetTiltY = Math.max(-cfg.maxTilt, Math.min(cfg.maxTilt, targetTiltY));
+}
+
+function onPointerUp(e) {
+  if (!pointerDown) return;
+  pointerDown = false;
+  playBoardTilt(false);
+}
+
+threeCanvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+threeCanvas.addEventListener('pointermove', onPointerMove, { passive: false });
+threeCanvas.addEventListener('pointerup', onPointerUp, { passive: false });
+threeCanvas.addEventListener('pointercancel', onPointerUp, { passive: false });
+
+// Game over / level clear tap to restart
+threeCanvas.addEventListener('pointerdown', (e) => {
+  if (gameState === 'gameover') {
+    e.stopPropagation();
+    score = 0;
+    startLevel(0);
+    startBgMusic();
+  }
+}, { passive: false });
+
+// ─── MAIN GAME LOOP ───────────────────────────────────────────────────────────
+function gameLoop(timestamp) {
+  animFrameId = requestAnimationFrame(gameLoop);
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  if (gameState === 'playing') {
+    // Fixed timestep accumulator
+    accumulator += dt;
+    const cfg = LEVEL_CONFIGS[currentLevel];
+    while (accumulator >= FIXED_DT) {
+      physicsStep(cfg);
+      accumulator -= FIXED_DT;
+    }
+
+    // Timer
+    timeRemaining -= dt;
+    if (timeRemaining <= 0 && gameState === 'playing') {
+      timeRemaining = 0;
+      triggerGameOver();
+    }
+
+    // Combo timer
+    if (comboTimer > 0) {
+      comboTimer -= dt;
+      if (comboTimer <= 0) {
+        comboTimer = 0;
+        comboMult = 1;
+      }
+    }
+
+    // Kill streak decay
+    if (killStreakTimer > 0) {
+      killStreakTimer -= dt;
+      if (killStreakTimer <= 0) {
+        killStreak = 0;
+        killStreak16Layer = false;
+      }
+    }
+
+    updateRollSound(ballSpeed);
+  }
+
+  drawHUD();
+  composer.render();
+}
+
+// ─── SCREEN TRANSITIONS ───────────────────────────────────────────────────────
+function showStartScreen() {
+  startScreen.style.display = 'flex';
+  instrScreen.style.display = 'none';
+  gameState = 'start';
+  startScreenAnimation();
+}
+
+function showInstructionsScreen() {
+  startScreen.style.display = 'none';
+  instrScreen.style.display = 'flex';
+  stopStartScreenAnimation();
+  gameState = 'instructions';
+}
+
+function startGame() {
+  instrScreen.style.display = 'none';
+  gameState = 'playing';
+  score = 0;
+  // Start game loop first
+  if (!animFrameId) {
+    lastTime = performance.now();
+    animFrameId = requestAnimationFrame(gameLoop);
+  }
+  startLevel(0);
+  // Start audio WITHOUT gating — fire and forget
+  initAudio().then(() => {
+    startBgMusic();
+  }).catch(() => {});
+}
+
+// Start screen tap
+startScreen.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  showInstructionsScreen();
+}, { passive: false });
+
+// Instructions "PLAY" button
+document.getElementById('instr-start-btn').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  startGame();
+}, { passive: false });
+
+// Fallback click
+document.getElementById('instr-start-btn').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (gameState === 'instructions') startGame();
+});
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+
+// Start main render loop
+lastTime = performance.now();
+animFrameId = requestAnimationFrame(gameLoop);
+
+// Show start screen
+showStartScreen();
+</script>
+</body>
+</html>
