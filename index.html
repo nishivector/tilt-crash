@@ -1172,6 +1172,7 @@ function triggerLevelComplete() {
 // ─── INPUT HANDLING ───────────────────────────────────────────────────────────
 function onPointerDown(e) {
   e.preventDefault();
+  if (gameState !== 'playing') return; // ignore tilt when not playing
   const rect = threeCanvas.getBoundingClientRect();
   pointerAnchorX = e.clientX - rect.left;
   pointerAnchorY = e.clientY - rect.top;
@@ -1208,11 +1209,12 @@ threeCanvas.addEventListener('pointermove', onPointerMove, { passive: false });
 threeCanvas.addEventListener('pointerup', onPointerUp, { passive: false });
 threeCanvas.addEventListener('pointercancel', onPointerUp, { passive: false });
 
-// Game over / level clear tap to restart
+// Game over tap to restart
 threeCanvas.addEventListener('pointerdown', (e) => {
   if (gameState === 'gameover') {
-    e.stopPropagation();
+    e.preventDefault();
     score = 0;
+    pointerDown = false; // ensure tilt doesn't start on restart tap
     startLevel(0);
     startBgMusic();
   }
