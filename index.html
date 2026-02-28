@@ -134,6 +134,8 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const BOARD_SIZE = 400;
@@ -145,7 +147,7 @@ const MAX_BALL_VEL = 22;
 const ENEMY_SIZE = 20;
 const ENEMY_MASS = 1.0;
 const ENEMY_RESTITUTION = 0.7;
-const EDGE_DANGER = 24; // 12% of half-width (200*0.12=24)
+const EDGE_DANGER = 45; // ~2s warning at full speed
 const DEG28 = 28 * Math.PI / 180;
 
 const LEVEL_CONFIGS = [
@@ -157,7 +159,7 @@ const LEVEL_CONFIGS = [
     enemyDefs: 'mixed16' },
   { enemies: 20, time: 55, maxTilt: 22*Math.PI/180, sens: 0.038, spring: 140, damp: 14, friction: ROLL_FRICTION,
     enemyDefs: 'mixed20' },
-  { enemies: 24, time: 60, maxTilt: 22*Math.PI/180, sens: 0.038, spring: 140, damp: 10, friction: 0.008,
+  { enemies: 24, time: 90, maxTilt: 22*Math.PI/180, sens: 0.038, spring: 140, damp: 10, friction: 0.008,
     enemyDefs: 'mixed24' },
 ];
 
@@ -194,6 +196,7 @@ const FIXED_DT = 1/60;
 let animFrameId = null;
 let killStreak = 0;
 let killStreakTimer = 0;
+let killStreakTimeout = null;
 
 // ─── THREE.JS SETUP ──────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, alpha: false });
@@ -212,20 +215,86 @@ const camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 2000);
 camera.position.set(0, 520, 140);
 camera.lookAt(0, 0, 0);
 
-// Post-processing (bloom)
-const composer = new EffectComposer(renderer);
-const renderPass = new RenderPass(scene, camera);
-composer.addPass(renderPass);
+// ─── SELECTIVE BLOOM (layer 1 = ball + particles; layer 0 = everything else) ─
+// bloomComposer: renders scene with only layer-1 objects lit, applies UnrealBloomPass
+const bloomComposer = new EffectComposer(renderer);
+bloomComposer.renderToScreen = false;
+bloomComposer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
   0.6, 0.5, 0.72
 );
-composer.addPass(bloomPass);
+bloomComposer.addPass(bloomPass);
+
+// mixShader: additively blends bloom texture on top of base scene render
+const mixShader = {
+  uniforms: {
+    baseTexture: { value: null },
+    bloomTexture: { value: null }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+  `,
+  fragmentShader: `
+    uniform sampler2D baseTexture;
+    uniform sampler2D bloomTexture;
+    varying vec2 vUv;
+    void main() {
+      gl_FragColor = texture2D(baseTexture, vUv) + texture2D(bloomTexture, vUv);
+    }
+  `
+};
+
+// finalComposer: renders full scene, then composites bloom on top
+const finalComposer = new EffectComposer(renderer);
+finalComposer.addPass(new RenderPass(scene, camera));
+const mixPass = new ShaderPass(new THREE.ShaderMaterial(mixShader), 'baseTexture');
+mixPass.needsSwap = true;
+finalComposer.addPass(mixPass);
+finalComposer.addPass(new OutputPass());
+
+// Dark material to hide layer-0 objects during bloom render
+const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+const materialCache = new Map();
+
+function renderSelectiveBloom() {
+  // Step 1: Replace layer-0 meshes with dark material for bloom pass
+  scene.traverse(obj => {
+    if (obj.isMesh && !(obj.layers.mask & 2)) { // not on layer 1
+      materialCache.set(obj.uuid, obj.material);
+      obj.material = darkMaterial;
+    }
+  });
+  camera.layers.enableAll();
+  bloomComposer.render();
+
+  // Step 2: Restore materials
+  scene.traverse(obj => {
+    if (materialCache.has(obj.uuid)) {
+      obj.material = materialCache.get(obj.uuid);
+    }
+  });
+  materialCache.clear();
+
+  // Step 3: Wire bloom output texture into mixPass, then run final composite
+  if (mixPass.uniforms && mixPass.uniforms.bloomTexture) {
+    const bloomTex = bloomComposer.renderTarget2
+      ? bloomComposer.renderTarget2.texture
+      : (bloomComposer.writeBuffer ? bloomComposer.writeBuffer.texture : null);
+    if (bloomTex) mixPass.uniforms.bloomTexture.value = bloomTex;
+  }
+  camera.layers.enableAll();
+  finalComposer.render();
+}
+
+// Alias for resize
+const composer = { setSize: (w, h) => { bloomComposer.setSize(w, h); finalComposer.setSize(w, h); } };
 
 // ─── SCENE OBJECTS ───────────────────────────────────────────────────────────
 // Board
 const boardGeo = new THREE.BoxGeometry(BOARD_SIZE, 8, BOARD_SIZE);
-const boardMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, roughness: 0.9, metalness: 0.2 });
+const boardMat = new THREE.MeshStandardMaterial({ color: 0x2E1A0A, roughness: 0.9, metalness: 0.2 });
 const boardMesh = new THREE.Mesh(boardGeo, boardMat);
 boardMesh.position.y = -4;
 scene.add(boardMesh);
@@ -260,9 +329,10 @@ const edgeDangerMat = new THREE.MeshStandardMaterial({
 const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 24, 16);
 const ballMat = new THREE.MeshStandardMaterial({
   color: 0x1A1A1A, roughness: 0.85, metalness: 0.3,
-  emissive: 0x331100, emissiveIntensity: 0.3
+  emissive: 0x331100, emissiveIntensity: 0.0
 });
 const ballMesh = new THREE.Mesh(ballGeo, ballMat);
+ballMesh.layers.set(1); // layer 1 = bloom
 scene.add(ballMesh);
 
 // Lights
@@ -307,6 +377,7 @@ const partGeo = new THREE.BufferGeometry();
 partGeo.setAttribute('position', new THREE.BufferAttribute(partPositions, 3));
 const partMat = new THREE.PointsMaterial({ color: 0xFFB347, size: 6, sizeAttenuation: true });
 const partSystem = new THREE.Points(partGeo, partMat);
+partSystem.layers.set(1); // layer 1 = bloom
 scene.add(partSystem);
 
 // ─── RESIZE ──────────────────────────────────────────────────────────────────
@@ -547,7 +618,7 @@ function updateKillStreakMusic(streak) {
         try { dist.triggerAttackRelease(notes[ni % notes.length], '8n', Tone.now(), 0.4); } catch(e) {}
         ni++;
       }, 500);
-      setTimeout(() => {
+      killStreakTimeout = setTimeout(() => {
         killStreakLayer = false;
         if (distortedGain) distortedGain.gain.rampTo(0, 0.3);
         clearInterval(interval);
@@ -636,7 +707,7 @@ function drawStartBoard(dt) {
   const by = oy + (lp.y * 0.35 + 0.5) * boardH;
   const br = 18 * (w / 300);
 
-  startCtx.globalAlpha = 0.4;
+  startCtx.globalAlpha = 0.85;
   startCtx.fillStyle = '#1A1A1A';
   startCtx.beginPath();
   startCtx.arc(bx, by, br, 0, Math.PI * 2);
@@ -943,9 +1014,8 @@ function physicsStep(cfg) {
   const boardY = 8 + BALL_RADIUS;
   ballMesh.position.set(ball.x, boardY, ball.y);
 
-  // Bloom on ball by speed
-  const bloomIntensity = 0.3 + (ballSpeed / MAX_BALL_VEL) * 0.3;
-  ballMat.emissiveIntensity = ballSpeed > 8 ? bloomIntensity : 0.3;
+  // Bloom on ball by speed (only at high speed)
+  ballMat.emissiveIntensity = ballSpeed > 8 ? (0.3 + (ballSpeed / MAX_BALL_VEL) * 0.3) : 0.0;
 
   // Edge danger
   const halfBoard = BOARD_SIZE / 2;
@@ -1128,6 +1198,7 @@ function startLevel(levelIdx) {
   comboTimer = 0;
   killStreak = 0;
   killStreakTimer = 0;
+  if (killStreakTimeout) { clearTimeout(killStreakTimeout); killStreakTimeout = null; }
   killStreakLayer = false;
   killStreak16Layer = false;
   ball = { x: 0, y: 0, vx: 0, vy: 0 };
@@ -1264,7 +1335,7 @@ function gameLoop(timestamp) {
   }
 
   drawHUD();
-  composer.render();
+  renderSelectiveBloom();
 }
 
 // ─── SCREEN TRANSITIONS ───────────────────────────────────────────────────────
