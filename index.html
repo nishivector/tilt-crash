@@ -328,8 +328,8 @@ const edgeDangerMat = new THREE.MeshStandardMaterial({
 // Ball
 const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 24, 16);
 const ballMat = new THREE.MeshStandardMaterial({
-  color: 0x1A1A1A, roughness: 0.85, metalness: 0.3,
-  emissive: 0x331100, emissiveIntensity: 0.0
+  color: 0xD4C8A8, roughness: 0.55, metalness: 0.4,
+  emissive: 0x886633, emissiveIntensity: 0.18
 });
 const ballMesh = new THREE.Mesh(ballGeo, ballMat);
 ballMesh.layers.set(1); // layer 1 = bloom
@@ -1010,8 +1010,8 @@ function physicsStep(cfg) {
   boardMesh.rotation.z = boardTiltX;
   boardMesh.rotation.x = boardTiltY;
 
-  // Ball position on board mesh
-  const boardY = 8 + BALL_RADIUS;
+  // Ball position on board mesh — account for tilt so ball rides the surface
+  const boardY = BALL_RADIUS + ball.x * Math.sin(boardTiltX) - ball.y * Math.sin(boardTiltY);
   ballMesh.position.set(ball.x, boardY, ball.y);
 
   // Bloom on ball by speed (only at high speed)
