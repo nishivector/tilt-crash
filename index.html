@@ -855,9 +855,9 @@ function physicsStep(cfg) {
     ball.vy = (ball.vy/sp2) * MAX_BALL_VEL;
   }
 
-  // Move ball
-  ball.x += ball.vx * dt * 60; // scale for unit consistency
-  ball.y += ball.vy * dt * 60;
+  // Move ball (vx is in units/s, dt = 1/60s)
+  ball.x += ball.vx * dt;
+  ball.y += ball.vy * dt;
 
   ballSpeed = Math.sqrt(ball.vx*ball.vx + ball.vy*ball.vy);
 
@@ -879,8 +879,8 @@ function physicsStep(cfg) {
       }
     }
 
-    e.x += e.vx * dt * 60;
-    e.z += e.vz * dt * 60;
+    e.x += e.vx * dt;
+    e.z += e.vz * dt;
 
     // Bounce at board edges
     if (e.type !== 'static') {
